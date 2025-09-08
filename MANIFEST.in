@@ -1,2 +1,2 @@
 include README.md
-include tmus/library_cache_organized_music_dir.json
+prune *.egg-info
