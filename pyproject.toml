@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmus"
+version = "0.2.0"
+description = "Terminal-based music player for organized music directories."
+readme = "README.md"
+authors = [
+    { name = "Ismail Manjlai", email = "brave.key4637@manjlai.dev" }
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+    "python-vlc",
+    "windows-curses; platform_system == 'Windows'"
+]
+
+[project.scripts]
+tmus = "tmus.app:main"
