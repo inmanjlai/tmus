@@ -3,6 +3,7 @@ import curses
 import sys
 import os
 import vlc
+import random
 # Update this import to use the new optimized functions
 from tmus.library_cache import update_library_cache
 from tmus.music_scanner import flatten_album
@@ -69,20 +70,93 @@ def search_library(library, query):
 
     return filtered_library, filtered_artists
 
+def create_shuffle_playlist(library):
+    """Create a shuffled playlist of all songs"""
+    all_songs = []
+    for artist, albums in library.items():
+        songs = flatten_album(albums)
+        for song in songs:
+            all_songs.append((song, artist))
+
+    random.shuffle(all_songs)
+    return all_songs
+
+def get_artist_for_song(song, library):
+    """Find which artist a song belongs to"""
+    for artist, albums in library.items():
+        songs = flatten_album(albums)
+        if song in songs:
+            return artist
+    return "Unknown Artist"
+
+def create_all_songs_list(library):
+    """Create a single list of all songs with their artists"""
+    all_songs = []
+    for artist, albums in library.items():
+        songs = flatten_album(albums)
+        for song in songs:
+            all_songs.append((song, artist))
+    return all_songs
+
+def play_next_song(player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song):
+    """Play the next song in shuffle or normal mode"""
+    if shuffle and shuffle_playlist:
+        # Move to next song in shuffle playlist
+        new_index = (current_playlist_index + 1) % len(shuffle_playlist)
+        next_song, next_artist = shuffle_playlist[new_index]
+
+        media = instance.media_new(next_song)
+        player.set_media(media)
+        player.play()
+
+        return next_song, next_artist, new_index
+
+    # Normal mode - could be enhanced to play next song in current artist/album
+    return curr_song, get_artist_for_song(curr_song, library) if curr_song else "Unknown Artist", current_playlist_index
+
+def play_previous_song(player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song):
+    """Play the previous song in shuffle or normal mode"""
+    if shuffle and shuffle_playlist:
+        # Move to previous song in shuffle playlist
+        new_index = (current_playlist_index - 1) % len(shuffle_playlist)
+        prev_song, prev_artist = shuffle_playlist[new_index]
+
+        media = instance.media_new(prev_song)
+        player.set_media(media)
+        player.play()
+
+        return prev_song, prev_artist, new_index
+
+    # Normal mode - could be enhanced to play previous song in current artist/album
+    return curr_song, get_artist_for_song(curr_song, library) if curr_song else "Unknown Artist", current_playlist_index
+
 def draw_search_input(stdscr, query, search_active, height, width):
     """Draw the search input field at the bottom"""
     if search_active:
         search_text = f"Search: {query}"
         search_y = height - 1
-        # Clear the search line
-        stdscr.addstr(search_y, PADDING, " " * (width - 2 * PADDING))
+        # Clear the search line safely
+        max_clear_width = max(0, width - 2 * PADDING)
+        if max_clear_width > 0:
+            stdscr.addstr(search_y, PADDING, " " * max_clear_width)
+
+        # Truncate search text if too long
+        max_search_width = width - 2 * PADDING - 10  # Leave space for cursor and instructions
+        if len(search_text) > max_search_width:
+            search_text = search_text[:max_search_width-3] + "..."
+
         # Draw search input with cursor
-        stdscr.addstr(search_y, PADDING, search_text)
-        stdscr.addstr(search_y, PADDING + len(search_text), "_", curses.A_BLINK)
+        if len(search_text) + PADDING < width - 1:
+            stdscr.addstr(search_y, PADDING, search_text)
+            cursor_x = PADDING + len(search_text)
+            if cursor_x < width - 1:
+                stdscr.addstr(search_y, cursor_x, "_", curses.A_BLINK)
 
         # Instructions
         instructions = "[Enter] search [Esc] cancel"
-        stdscr.addstr(search_y, width - len(instructions) - PADDING, instructions, curses.A_DIM)
+        instr_x = width - len(instructions) - PADDING
+        if instr_x > PADDING + len(search_text) + 2 and len(instructions) + PADDING < width:
+            stdscr.addstr(search_y, instr_x, instructions, curses.A_DIM)
 
 def main_ui(stdscr, path):
     flat_dir = False
@@ -126,6 +200,13 @@ def main_ui(stdscr, path):
     curr_artist = None
     playing = False
     repeat = False
+    shuffle = False
+    shuffle_playlist = []
+    current_playlist_index = 0
+    ui_style = 1  # 1 = two-pane view, 2 = single list view
+    all_songs_list = []  # For single list view
+    selected_all_song = 0
+    all_song_offset = 0
 
     # Search state
     search_active = False
@@ -140,6 +221,7 @@ def main_ui(stdscr, path):
         return
 
     artists = list(library.keys())
+    all_songs_list = create_all_songs_list(library)
 
     instance = vlc.Instance()
     player = instance.media_player_new()
@@ -195,51 +277,124 @@ def main_ui(stdscr, path):
         if search_active:
             pass
         elif search_query:
-            footer = "[q] quit  [p] pause  [+/-] vol  [< / >] seek  [Enter] play  [/] search  [c] clear"
-            stdscr.addstr(height - 2, int(width/2 - len(footer)/2), footer, curses.A_BOLD)
+            footer = "[q] quit  [p] pause  [+/-] vol  [< / >] seek  [Enter] play  [/] search  [c] clear  [s] shuffle  [n] next  [b] prev  [1/2] view"
+            # Truncate footer if too long for the screen
+            if len(footer) > width - 2 * PADDING:
+                footer = footer[:width - 2 * PADDING - 3] + "..."
+            footer_x = max(PADDING, int(width/2 - len(footer)/2))
+            stdscr.addstr(height - 2, footer_x, footer, curses.A_BOLD)
         else:
-            footer = "[q] quit  [p] pause  [+ / -] vol  [< / >] seek  [Enter] play  [/] search"
-            stdscr.addstr(height - 2, int(width/2 - len(footer)/2), footer, curses.A_BOLD)
+            footer = "[q] quit  [p] pause  [+ / -] vol  [< / >] seek  [Enter] play  [/] search  [s] shuffle  [n] next  [b] prev  [1/2] view"
+            # Truncate footer if too long for the screen
+            if len(footer) > width - 2 * PADDING:
+                footer = footer[:width - 2 * PADDING - 3] + "..."
+            footer_x = max(PADDING, int(width/2 - len(footer)/2))
+            stdscr.addstr(height - 2, footer_x, footer, curses.A_BOLD)
         
-        # Only clear and redraw the content windows
-        artist_win.clear()
-        songs_win.clear()
-        artist_win.box()
-        songs_win.box()
-
         # ---------- HEADER SECTION ----------
         repeat_text = " [r] repeat: ON " if repeat else " [r] repeat: OFF "
         repeat_color = curses.A_BOLD | (curses.color_pair(1) if repeat and curses.has_colors() else 0)
         stdscr.addstr(2, width - len(repeat_text) - PADDING, repeat_text, repeat_color)
 
-        # ---------- ARTISTS SECTION ----------
-        current_artists = filtered_artists if search_query else artists
-        visible_artists = current_artists[artist_offset:artist_offset + max_rows]
+        shuffle_text = " [s] shuffle: ON " if shuffle else " [s] shuffle: OFF "
+        shuffle_color = curses.A_BOLD | (curses.color_pair(1) if shuffle and curses.has_colors() else 0)
 
-        for i in range(len(visible_artists)):
-            if i >= max_rows:
-                break
-            if selected_artist == i:
-                artist_win.addstr(i + 1, 2, visible_artists[i], curses.A_STANDOUT)
-            else:
-                artist_win.addstr(i + 1, 2, visible_artists[i])
+        ui_style_text = f" [1/2] View: {ui_style} "
+        ui_style_color = curses.A_BOLD
 
-        # ---------- SONGS SECTION ----------
-        if visible_artists and selected_artist < len(visible_artists):
-            current_library = filtered_library if search_query else library
-            current_artists_albums = current_library[visible_artists[selected_artist]]
-            all_songs_by_artist = flatten_album(current_artists_albums)
+        stdscr.addstr(2, width - len(repeat_text) - len(shuffle_text) - len(ui_style_text) - PADDING, ui_style_text, ui_style_color)
+        stdscr.addstr(2, width - len(repeat_text) - len(shuffle_text) - PADDING, shuffle_text, shuffle_color)
 
-            visible_songs = all_songs_by_artist[song_offset : song_offset + max_rows]
-            for i, song in enumerate(visible_songs):
-                song_split = os.path.basename(song)
-                if i == selected_song:
-                    songs_win.addstr(i + 1, 2, song_split, curses.A_STANDOUT)
+        if ui_style == 1:
+            # Two-pane view
+            artist_win.clear()
+            songs_win.clear()
+            artist_win.box()
+            songs_win.box()
+
+            # ---------- ARTISTS SECTION ----------
+            current_artists = filtered_artists if search_query else artists
+            visible_artists = current_artists[artist_offset:artist_offset + max_rows]
+
+            # Clear all lines first to prevent artifacts when list shrinks
+            for i in range(max_rows):
+                artist_win.addstr(i + 1, 2, " " * (artist_win_width - 4))
+
+            for i in range(len(visible_artists)):
+                if i >= max_rows:
+                    break
+                if selected_artist == i:
+                    artist_win.addstr(i + 1, 2, visible_artists[i], curses.A_STANDOUT)
                 else:
-                    songs_win.addstr(i + 1, 2, song_split)
+                    artist_win.addstr(i + 1, 2, visible_artists[i])
+
+            # ---------- SONGS SECTION ----------
+            if visible_artists and selected_artist < len(visible_artists):
+                current_library = filtered_library if search_query else library
+                current_artists_albums = current_library[visible_artists[selected_artist]]
+                all_songs_by_artist = flatten_album(current_artists_albums)
+
+                # Clear all lines first to prevent artifacts when list shrinks
+                for i in range(max_rows):
+                    songs_win.addstr(i + 1, 2, " " * (songs_win_width - 4))
+
+                visible_songs = all_songs_by_artist[song_offset : song_offset + max_rows]
+                for i, song in enumerate(visible_songs):
+                    song_split = os.path.basename(song)
+                    if i == selected_song:
+                        songs_win.addstr(i + 1, 2, song_split, curses.A_STANDOUT)
+                    else:
+                        songs_win.addstr(i + 1, 2, song_split)
+            else:
+                all_songs_by_artist = []
+                visible_songs = []
+
         else:
+            # Single list view - use full width
+            artist_win.clear()
+            songs_win.clear()
+
+            # Create single window for all songs
+            full_win = curses.newwin(content_height, content_width, 3, PADDING)
+            full_win.clear()
+            full_win.box()
+
+            # Use filtered list or all songs
+            current_all_songs = []
+            if search_query:
+                # Create filtered all songs list
+                for artist, albums in filtered_library.items():
+                    songs = flatten_album(albums)
+                    for song in songs:
+                        current_all_songs.append((song, artist))
+            else:
+                current_all_songs = all_songs_list
+
+            visible_all_songs = current_all_songs[all_song_offset:all_song_offset + max_rows]
+
+            # Clear all lines first to prevent artifacts when list shrinks
+            for i in range(max_rows):
+                full_win.addstr(i + 1, 2, " " * (content_width - 4))
+
+            for i, (song, artist) in enumerate(visible_all_songs):
+                if i >= max_rows:
+                    break
+                song_display = f"{os.path.basename(song)} - {artist}"
+                # Truncate if too long
+                max_song_width = content_width - 4
+                if len(song_display) > max_song_width:
+                    song_display = song_display[:max_song_width-3] + "..."
+
+                if i == selected_all_song:
+                    full_win.addstr(i + 1, 2, song_display, curses.A_STANDOUT)
+                else:
+                    full_win.addstr(i + 1, 2, song_display)
+
+            full_win.refresh()
+
+            # Set visible_songs for compatibility with existing logic
+            visible_songs = [song for song, artist in visible_all_songs]
             all_songs_by_artist = []
-            visible_songs = []
 
         # Draw search input if active
         draw_search_input(stdscr, search_query, search_active, height - 1, width)
@@ -264,12 +419,19 @@ def main_ui(stdscr, path):
             if duration <= 0:
                 duration = 1
 
-            # Repeat logic: if repeat is on and song finished, restart
-            if repeat and player.get_state() == vlc.State.Ended:
-                player.stop()
-                media = instance.media_new(curr_song)
-                player.set_media(media)
-                player.play()
+            # Handle song ending: repeat, shuffle to next, or stop
+            if player.get_state() == vlc.State.Ended:
+                if repeat:
+                    # Repeat current song
+                    player.stop()
+                    media = instance.media_new(curr_song)
+                    player.set_media(media)
+                    player.play()
+                elif shuffle and shuffle_playlist:
+                    # Play next song in shuffle playlist
+                    curr_song, curr_artist, current_playlist_index = play_next_song(
+                        player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song
+                    )
 
             now_playing = f"now playing: {os.path.basename(curr_song)}"
 
@@ -302,8 +464,9 @@ def main_ui(stdscr, path):
             stdscr.addstr(progress_y, int(width/2 - len(time_info)/2), time_info, curses.A_BOLD)
 
         stdscr.refresh()
-        artist_win.refresh()
-        songs_win.refresh()
+        if ui_style == 1:
+            artist_win.refresh()
+            songs_win.refresh()
         key = stdscr.getch()
 
         # ---------- SEARCH INPUT HANDLING ----------
@@ -327,6 +490,8 @@ def main_ui(stdscr, path):
                     artist_offset = 0
                     selected_song = 0
                     song_offset = 0
+                    selected_all_song = 0
+                    all_song_offset = 0
             elif key == curses.KEY_BACKSPACE or key == 8 or key == 127:
                 if search_query:
                     search_query = search_query[:-1]
@@ -348,42 +513,118 @@ def main_ui(stdscr, path):
             artist_offset = 0
             selected_song = 0
             song_offset = 0
+            selected_all_song = 0
+            all_song_offset = 0
+
+        # Switch UI style with '1' and '2' keys
+        if key == ord("1"):
+            ui_style = 1
+            # Reset selections when switching views
+            selected_artist = 0
+            artist_offset = 0
+            selected_song = 0
+            song_offset = 0
+        elif key == ord("2"):
+            ui_style = 2
+            # Reset selections when switching views
+            selected_all_song = 0
+            all_song_offset = 0
 
         # ---------- NAVIGATION ----------
-        if key == curses.KEY_UP:
-            song_offset = 0
-            selected_song = 0
-            current_artists = filtered_artists if search_query else artists
-            if selected_artist > 0:
-                selected_artist -= 1
-            elif selected_artist + artist_offset > 0:
-                artist_offset -= 1
-        elif key == curses.KEY_DOWN:
-            song_offset = 0
-            selected_song = 0
-            current_artists = filtered_artists if search_query else artists
-            if selected_artist < min(max_rows - 1, len(current_artists) - 1):
-                selected_artist += 1
-            elif selected_artist + artist_offset < len(current_artists) - 1:
-                artist_offset += 1
-        elif key == curses.KEY_LEFT:
-            if selected_song > 0:
-                selected_song -= 1
-            elif selected_song + song_offset > 0:
-                song_offset -= 1
-        elif key == curses.KEY_RIGHT:
-            if selected_song < min(max_rows - 1, len(all_songs_by_artist) - 1):
-                selected_song += 1
-            elif selected_song + song_offset < len(all_songs_by_artist) - 1:
-                song_offset += 1
-        elif key == curses.KEY_ENTER or key == 10 or key == 13:
-            if visible_songs and selected_song < len(visible_songs):
-                curr_song = visible_songs[selected_song]
-                curr_artist = visible_artists[selected_artist] if visible_artists and selected_artist < len(visible_artists) else "Unknown Artist"
-                media = instance.media_new(curr_song)
-                player.set_media(media)
-                player.play()
-                playing = True
+        if ui_style == 1:
+            # Two-pane navigation
+            if key == curses.KEY_UP:
+                song_offset = 0
+                selected_song = 0
+                current_artists = filtered_artists if search_query else artists
+                if selected_artist > 0:
+                    selected_artist -= 1
+                elif selected_artist + artist_offset > 0:
+                    artist_offset -= 1
+            elif key == curses.KEY_DOWN:
+                song_offset = 0
+                selected_song = 0
+                current_artists = filtered_artists if search_query else artists
+                if selected_artist < min(max_rows - 1, len(current_artists) - 1):
+                    selected_artist += 1
+                elif selected_artist + artist_offset < len(current_artists) - 1:
+                    artist_offset += 1
+            elif key == curses.KEY_LEFT:
+                if selected_song > 0:
+                    selected_song -= 1
+                elif selected_song + song_offset > 0:
+                    song_offset -= 1
+            elif key == curses.KEY_RIGHT:
+                if len(all_songs_by_artist) > 0:
+                    if selected_song < min(max_rows - 1, len(all_songs_by_artist) - 1):
+                        selected_song += 1
+                    elif selected_song + song_offset < len(all_songs_by_artist) - 1:
+                        song_offset += 1
+        else:
+            # Single list navigation
+            current_all_songs = []
+            if search_query:
+                for artist, albums in filtered_library.items():
+                    songs = flatten_album(albums)
+                    for song in songs:
+                        current_all_songs.append((song, artist))
+            else:
+                current_all_songs = all_songs_list
+
+            if key == curses.KEY_UP:
+                if selected_all_song > 0:
+                    selected_all_song -= 1
+                elif selected_all_song + all_song_offset > 0:
+                    all_song_offset -= 1
+            elif key == curses.KEY_DOWN:
+                if selected_all_song < min(max_rows - 1, len(current_all_songs) - 1):
+                    selected_all_song += 1
+                elif selected_all_song + all_song_offset < len(current_all_songs) - 1:
+                    all_song_offset += 1
+
+        if key == curses.KEY_ENTER or key == 10 or key == 13:
+            if ui_style == 1:
+                # Two-pane mode song selection
+                if visible_songs and selected_song < len(visible_songs):
+                    curr_song = visible_songs[selected_song]
+                    curr_artist = visible_artists[selected_artist] if visible_artists and selected_artist < len(visible_artists) else "Unknown Artist"
+                    media = instance.media_new(curr_song)
+                    player.set_media(media)
+                    player.play()
+                    playing = True
+
+                    # If shuffle mode is on, find this song in the shuffle playlist
+                    if shuffle and shuffle_playlist:
+                        for i, (song, artist) in enumerate(shuffle_playlist):
+                            if song == curr_song:
+                                current_playlist_index = i
+                                break
+            else:
+                # Single list mode song selection
+                current_all_songs = []
+                if search_query:
+                    for artist, albums in filtered_library.items():
+                        songs = flatten_album(albums)
+                        for song in songs:
+                            current_all_songs.append((song, artist))
+                else:
+                    current_all_songs = all_songs_list
+
+                if current_all_songs and selected_all_song < len(current_all_songs):
+                    visible_all_songs = current_all_songs[all_song_offset:all_song_offset + max_rows]
+                    if selected_all_song < len(visible_all_songs):
+                        curr_song, curr_artist = visible_all_songs[selected_all_song]
+                        media = instance.media_new(curr_song)
+                        player.set_media(media)
+                        player.play()
+                        playing = True
+
+                        # If shuffle mode is on, find this song in the shuffle playlist
+                        if shuffle and shuffle_playlist:
+                            for i, (song, artist) in enumerate(shuffle_playlist):
+                                if song == curr_song:
+                                    current_playlist_index = i
+                                    break
         elif key == ord("="):
             volume = min(100, volume + 5)
             player.audio_set_volume(volume)
@@ -419,6 +660,46 @@ def main_ui(stdscr, path):
                 player.pause()
         elif key == ord("r"):
             repeat = not repeat
+        elif key == ord("s"):
+            shuffle = not shuffle
+            if shuffle:
+                # Create shuffle playlist when enabling shuffle
+                current_library = filtered_library if search_query else library
+                shuffle_playlist = create_shuffle_playlist(current_library)
+                if curr_song:
+                    # Find current song in shuffle playlist and set index
+                    for i, (song, artist) in enumerate(shuffle_playlist):
+                        if song == curr_song:
+                            current_playlist_index = i
+                            break
+                    else:
+                        current_playlist_index = 0
+                else:
+                    # No current song, start playing a random one
+                    if shuffle_playlist:
+                        current_playlist_index = 0
+                        curr_song, curr_artist = shuffle_playlist[current_playlist_index]
+                        media = instance.media_new(curr_song)
+                        player.set_media(media)
+                        player.play()
+                        playing = True
+            else:
+                shuffle_playlist = []
+                current_playlist_index = 0
+        elif key == ord("n"):
+            # Next song
+            if shuffle and shuffle_playlist:
+                curr_song, curr_artist, current_playlist_index = play_next_song(
+                    player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song
+                )
+                playing = True
+        elif key == ord("b"):
+            # Previous song
+            if shuffle and shuffle_playlist:
+                curr_song, curr_artist, current_playlist_index = play_previous_song(
+                    player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song
+                )
+                playing = True
         elif key == ord("q"):
             break
         elif key == -1:
