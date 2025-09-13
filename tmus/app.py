@@ -73,7 +73,7 @@ def draw_search_input(stdscr, query, search_active, height, width):
     """Draw the search input field at the bottom"""
     if search_active:
         search_text = f"Search: {query}"
-        search_y = height - 2
+        search_y = height - 1
         # Clear the search line
         stdscr.addstr(search_y, PADDING, " " * (width - 2 * PADDING))
         # Draw search input with cursor
@@ -191,14 +191,15 @@ def main_ui(stdscr, path):
             stdscr.addstr(1, width - len(search_status) - PADDING, search_status, curses.A_DIM)
 
         # Clear and redraw footer with search instruction
-        stdscr.addstr(height - 1, 0, " " * (width - 1))  # Clear entire footer line (width-1 to avoid bounds error)
+        stdscr.addstr(height - 2, 0, " " * (width - 1))  # Clear entire footer line (width-1 to avoid bounds error)
         if search_active:
-            footer = "[Esc] cancel search"
+            pass
         elif search_query:
-            footer = "[q] quit [p] pause [+/-] vol [,/./</>] seek [Enter] play [/] search [c] clear"
+            footer = "[q] quit  [p] pause  [+/-] vol  [< / >] seek  [Enter] play  [/] search  [c] clear"
+            stdscr.addstr(height - 2, int(width/2 - len(footer)/2), footer, curses.A_BOLD)
         else:
-            footer = "[q] quit [p] pause [+/-] vol [,/./</>] seek [Enter] play [/] search"
-        stdscr.addstr(height - 1, int(width/2 - len(footer)/2), footer, curses.A_BOLD)
+            footer = "[q] quit  [p] pause  [+ / -] vol  [< / >] seek  [Enter] play  [/] search"
+            stdscr.addstr(height - 2, int(width/2 - len(footer)/2), footer, curses.A_BOLD)
         
         # Only clear and redraw the content windows
         artist_win.clear()
@@ -241,27 +242,21 @@ def main_ui(stdscr, path):
             visible_songs = []
 
         # Draw search input if active
-        draw_search_input(stdscr, search_query, search_active, height, width)
+        draw_search_input(stdscr, search_query, search_active, height - 1, width)
         
         # ---------- NOW PLAYING SECTION ----------
         if curr_song and curr_artist:
-            # Clear now playing area - clear both possible positions to prevent duplicates
-            normal_now_playing_y = height - 5
-            normal_progress_y = height - 3
-            search_now_playing_y = height - 6
-            search_progress_y = height - 4
+            # Clear now playing area
+            now_playing_y = height - 6
+            progress_y = height - 4
 
-            # Clear both possible locations to prevent duplicate displays
-            stdscr.addstr(normal_now_playing_y, PADDING, " " * (width - 2 * PADDING))
-            stdscr.addstr(normal_progress_y, PADDING, " " * (width - 2 * PADDING))
-            if height > 6:  # Make sure we don't go out of bounds
-                stdscr.addstr(search_now_playing_y, PADDING, " " * (width - 2 * PADDING))
-            if height > 4:
-                stdscr.addstr(search_progress_y, PADDING, " " * (width - 2 * PADDING))
+            # Clear the now playing locations
+            stdscr.addstr(now_playing_y, PADDING, " " * (width - 2 * PADDING))
+            stdscr.addstr(progress_y, PADDING, " " * (width - 2 * PADDING))
 
-            # Choose the correct position based on search state
-            now_playing_y = height - 5 if not search_active else height - 6
-            progress_y = height - 3 if not search_active else height - 4
+            # Choose the correct position based on search state (keep same position for both modes)
+            now_playing_y = height - 6
+            progress_y = height - 4
 
             pos = player.get_time() / 1000
             duration = player.get_length() / 1000
