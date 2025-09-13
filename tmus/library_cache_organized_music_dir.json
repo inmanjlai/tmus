@@ -1,5 +1,5 @@
 {
-  "timestamp": 1757209442.0,
+  "timestamp": 1757602363.0,
   "library": {
     "AUR": {
       "Humsafar": [
@@ -43,6 +43,17 @@
       ],
       "Favourite Worst Nightmare": [
         "Z:\\media-server\\music_downloader\\organized_music_dir\\Arctic Monkeys\\Favourite Worst Nightmare\\505.mp3"
+      ]
+    },
+    "Arijit Singh": {
+      "ANIMAL - HINDI": [
+        "Z:\\media-server\\music_downloader\\organized_music_dir\\Arijit Singh\\ANIMAL - HINDI\\Satranga.mp3"
+      ],
+      "Dangal": [
+        "Z:\\media-server\\music_downloader\\organized_music_dir\\Arijit Singh\\Dangal\\Naina.mp3"
+      ],
+      "Dunki": [
+        "Z:\\media-server\\music_downloader\\organized_music_dir\\Arijit Singh\\Dunki\\O Maahi.mp3"
       ]
     },
     "Ashish Bhatia, Omkar Singh, Kashish Ratnani": {
@@ -125,6 +136,11 @@
     "Gorillaz": {
       "Plastic Beach": [
         "Z:\\media-server\\music_downloader\\organized_music_dir\\Gorillaz\\Plastic Beach\\On Melancholy Hill.mp3"
+      ]
+    },
+    "Green Day": {
+      "American Idiot": [
+        "Z:\\media-server\\music_downloader\\organized_music_dir\\Green Day\\American Idiot\\Wake Me up When September Ends.mp3"
       ]
     },
     "Guns N' Roses": {

@@ -11,52 +11,65 @@ def get_directory_mtime(music_dir):
     """Get the most recent modification time in the music directory"""
     latest_mtime = 0
     try:
+        # Check if directory exists first
+        if not os.path.exists(music_dir):
+            return 0  # Return 0 if directory doesn't exist
+
         # Check the root directory
         latest_mtime = max(latest_mtime, os.path.getmtime(music_dir))
-        
+
         # Walk through subdirectories (but don't open files)
         for root, dirs, files in os.walk(music_dir):
             try:
                 # Check directory modification time
                 latest_mtime = max(latest_mtime, os.path.getmtime(root))
-                
+
                 # Optional: check file modification times (slower but more accurate)
                 # for file in files:
                 #     if file.lower().endswith(('.mp3', '.flac', '.wav', '.m4a', '.ogg', '.aac')):
                 #         file_path = os.path.join(root, file)
                 #         latest_mtime = max(latest_mtime, os.path.getmtime(file_path))
-                        
+
             except (OSError, IOError):
                 continue  # Skip files we can't access
-                
+
     except (OSError, IOError):
-        return time.time()  # If we can't check, assume it's modified
-        
+        return 0  # Return 0 if we can't check (directory likely doesn't exist)
+
     return latest_mtime
 
 def load_library_cache(music_dir):
     cache_path = get_cache_path(music_dir)
     if not os.path.exists(cache_path):
         return None
-        
+
+    # Check if music directory exists first
+    if not os.path.exists(music_dir):
+        print("Music directory doesn't exist, invalidating cache...")
+        try:
+            os.remove(cache_path)  # Remove stale cache
+        except OSError:
+            pass
+        return None
+
     try:
         with open(cache_path, 'r', encoding='utf-8') as f:
             cache_data = json.load(f)
-            
+
         # Check if cache has required metadata
         if not isinstance(cache_data, dict) or 'timestamp' not in cache_data or 'library' not in cache_data:
             return None
-            
+
         # Check if music directory has been modified since cache was created
         cache_timestamp = cache_data['timestamp']
         current_mtime = get_directory_mtime(music_dir)
-        
+
         if current_mtime > cache_timestamp:
             print("Music directory modified since cache created, rescanning...")
             return None
-            
+
         return cache_data['library']
-        
+
     except (json.JSONDecodeError, OSError, IOError):
         return None
 
