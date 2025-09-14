@@ -2,7 +2,7 @@
 
 A terminal-based music player for organized music directories, using VLC for playback.
 
-<img width="1212" height="587" alt="image" src="https://github.com/user-attachments/assets/3c86f7a6-e268-415e-849f-1ba009cc9d8c" />
+<img width="1249" height="628" alt="image" src="https://github.com/user-attachments/assets/f636b437-4a37-4f14-822d-b0a7131220f3" />
 
 
 ## Features
