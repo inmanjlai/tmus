@@ -1,0 +1,10 @@
+{
+  "timestamp": 1757816071.879583,
+  "library": {
+    "a_very_long_artist_name_that_will_definitely_overflow_the_container": {
+      "Singles": [
+        "long_name_test\\a_very_long_artist_name_that_will_definitely_overflow_the_container\\a_very_long_song_name_that_will_also_overflow_the_container.mp3"
+      ]
+    }
+  }
+}

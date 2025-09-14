@@ -25,10 +25,10 @@ def get_directory_mtime(music_dir):
                 latest_mtime = max(latest_mtime, os.path.getmtime(root))
 
                 # Optional: check file modification times (slower but more accurate)
-                # for file in files:
-                #     if file.lower().endswith(('.mp3', '.flac', '.wav', '.m4a', '.ogg', '.aac')):
-                #         file_path = os.path.join(root, file)
-                #         latest_mtime = max(latest_mtime, os.path.getmtime(file_path))
+                for file in files:
+                    if file.lower().endswith(('.mp3', '.flac', '.wav', '.m4a', '.ogg', '.aac')):
+                        file_path = os.path.join(root, file)
+                        latest_mtime = max(latest_mtime, os.path.getmtime(file_path))
 
             except (OSError, IOError):
                 continue  # Skip files we can't access

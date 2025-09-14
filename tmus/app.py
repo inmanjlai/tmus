@@ -5,7 +5,7 @@ import os
 import vlc
 import random
 # Update this import to use the new optimized functions
-from tmus.library_cache import update_library_cache
+from tmus.library_cache import update_library_cache_fast
 from tmus.music_scanner import flatten_album
 
 PADDING = 2
@@ -37,14 +37,18 @@ def show_loading_screen(stdscr, progress, total):
     
     stdscr.refresh()
 
-# refactor artists and songs to use draw list
-def draw_list(win, items, offset, selected, max_rows):
-    visible = items[offset:offset + max_rows]
-    for i, item in enumerate(visible):
-        if i + offset == selected:
-            win.addstr(i + 1, 2, item, curses.A_STANDOUT)
-        else:
-            win.addstr(i + 1, 2, item)
+def draw_item_in_window(win, row, col, text, max_width, is_selected):
+    # Truncate and add ellipsis if text is too long
+    if len(text) > max_width:
+        text = text[:max_width - 3] + "..."
+    
+    # Pad with spaces to fill the entire width for consistent highlighting
+    display_text = text.ljust(max_width)
+    
+    if is_selected:
+        win.addstr(row, col, display_text, curses.A_STANDOUT)
+    else:
+        win.addstr(row, col, display_text)
 
 def search_library(library, query):
     """Search for artists and songs matching the query"""
@@ -163,6 +167,12 @@ def main_ui(stdscr, path):
     # INITIALIZATION
     curses.curs_set(0)
     
+    # Initialize colors
+    if curses.has_colors():
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK) # White foreground, Black background
+        stdscr.bkgd(curses.color_pair(1)) # Set default background
+    
     # Show initial loading screen
     show_loading_screen(stdscr, 0, 0)
     
@@ -186,7 +196,7 @@ def main_ui(stdscr, path):
         return scan_func(path, progress_callback, total_files, flatten=False)
     
     # Load library with progress updates - this will now use proper caching
-    library = update_library_cache(path, scan_with_flatten, progress_callback)
+    library = update_library_cache_fast(path, scan_with_flatten, progress_callback)
 
     # Clear screen to remove any print statements from cache loading
     stdscr.clear()
@@ -323,10 +333,8 @@ def main_ui(stdscr, path):
             for i in range(len(visible_artists)):
                 if i >= max_rows:
                     break
-                if selected_artist == i:
-                    artist_win.addstr(i + 1, 2, visible_artists[i], curses.A_STANDOUT)
-                else:
-                    artist_win.addstr(i + 1, 2, visible_artists[i])
+                is_selected = (selected_artist == i)
+                draw_item_in_window(artist_win, i + 1, 2, visible_artists[i], artist_win_width - 4, is_selected)
 
             # ---------- SONGS SECTION ----------
             if visible_artists and selected_artist < len(visible_artists):
@@ -341,10 +349,8 @@ def main_ui(stdscr, path):
                 visible_songs = all_songs_by_artist[song_offset : song_offset + max_rows]
                 for i, song in enumerate(visible_songs):
                     song_split = os.path.basename(song)
-                    if i == selected_song:
-                        songs_win.addstr(i + 1, 2, song_split, curses.A_STANDOUT)
-                    else:
-                        songs_win.addstr(i + 1, 2, song_split)
+                    is_selected = (i == selected_song)
+                    draw_item_in_window(songs_win, i + 1, 2, song_split, songs_win_width - 4, is_selected)
             else:
                 all_songs_by_artist = []
                 visible_songs = []
@@ -380,15 +386,8 @@ def main_ui(stdscr, path):
                 if i >= max_rows:
                     break
                 song_display = f"{os.path.basename(song)} - {artist}"
-                # Truncate if too long
-                max_song_width = content_width - 4
-                if len(song_display) > max_song_width:
-                    song_display = song_display[:max_song_width-3] + "..."
-
-                if i == selected_all_song:
-                    full_win.addstr(i + 1, 2, song_display, curses.A_STANDOUT)
-                else:
-                    full_win.addstr(i + 1, 2, song_display)
+                is_selected = (i == selected_all_song)
+                draw_item_in_window(full_win, i + 1, 2, song_display, content_width - 4, is_selected)
 
             full_win.refresh()
 
@@ -433,7 +432,7 @@ def main_ui(stdscr, path):
                         player, instance, shuffle, shuffle_playlist, current_playlist_index, library, curr_song
                     )
 
-            now_playing = f"now playing: {os.path.basename(curr_song)}"
+            now_playing_text = f"now playing: {os.path.basename(curr_song)} - {curr_artist}"
 
             # Volume bar: 20 segments, right-aligned
             vol_blocks = int((volume / 100) * 20)
@@ -449,10 +448,13 @@ def main_ui(stdscr, path):
             vol_str = f" volume [{vol_bar_with_percent}] "
             # Calculate where to start the volume bar (right-aligned)
             vol_x = width - len(vol_str) - PADDING
-            # Truncate now_playing if it would overlap the volume bar
+            
+            # Truncate now_playing_text if it would overlap the volume bar
             max_now_playing_len = vol_x - PADDING - 1
-            now_playing_disp = now_playing[:max_now_playing_len]
-            stdscr.addstr(now_playing_y, PADDING, now_playing_disp, curses.A_BOLD)
+            if len(now_playing_text) > max_now_playing_len:
+                now_playing_text = now_playing_text[:max_now_playing_len-3] + "..."
+
+            stdscr.addstr(now_playing_y, PADDING, now_playing_text, curses.A_BOLD)
             stdscr.addstr(now_playing_y, vol_x, vol_str, curses.A_BOLD)
 
             # Progress bar with padding
@@ -518,17 +520,23 @@ def main_ui(stdscr, path):
 
         # Switch UI style with '1' and '2' keys
         if key == ord("1"):
-            ui_style = 1
-            # Reset selections when switching views
-            selected_artist = 0
-            artist_offset = 0
-            selected_song = 0
-            song_offset = 0
+            if ui_style != 1:
+                ui_style = 1
+                stdscr.clear() # Clear screen on view change
+                stdscr.refresh() # Refresh screen after clearing
+                # Reset selections when switching views
+                selected_artist = 0
+                artist_offset = 0
+                selected_song = 0
+                song_offset = 0
         elif key == ord("2"):
-            ui_style = 2
-            # Reset selections when switching views
-            selected_all_song = 0
-            all_song_offset = 0
+            if ui_style != 2:
+                ui_style = 2
+                stdscr.clear() # Clear screen on view change
+                stdscr.refresh() # Refresh screen after clearing
+                # Reset selections when switching views
+                selected_all_song = 0
+                all_song_offset = 0
 
         # ---------- NAVIGATION ----------
         if ui_style == 1:

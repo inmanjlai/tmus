@@ -1,0 +1,15 @@
+{
+  "timestamp": 1757815630.2235637,
+  "library": {
+    "artist1": {
+      "Singles": [
+        "test_music\\artist1\\song1.mp3"
+      ]
+    },
+    "artist2": {
+      "Singles": [
+        "test_music\\artist2\\song2.mp3"
+      ]
+    }
+  }
+}

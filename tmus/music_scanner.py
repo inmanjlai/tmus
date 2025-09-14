@@ -19,8 +19,10 @@ def scan_music_optimized(path, progress_callback=None, total_files=None, flatten
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if entry.is_file() and Path(entry.name).suffix.lower() in allowed_extensions:
-                        return True
+                    if entry.is_file():
+                        suffix = Path(entry.name).suffix.lower()
+                        if suffix in allowed_extensions:
+                            return True
         except (OSError, IOError):
             pass
         return False
@@ -30,8 +32,10 @@ def scan_music_optimized(path, progress_callback=None, total_files=None, flatten
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if entry.is_file() and Path(entry.name).suffix.lower() in allowed_extensions:
-                        music_files.append(entry.path)
+                    if entry.is_file():
+                        suffix = Path(entry.name).suffix.lower()
+                        if suffix in allowed_extensions:
+                            music_files.append(entry.path)
         except (OSError, IOError):
             pass
         return sorted(music_files)
@@ -60,20 +64,13 @@ def scan_music_optimized(path, progress_callback=None, total_files=None, flatten
                 library[artist_name] = {"All Songs": songs}
         
         if progress_callback:
-            progress_callback(1, 1)
+            # If it's a flat directory with songs, we've processed 1 unit of work
+            progress_callback(1, total_files if total_files is not None else 1)
         
         return library
     
     # Handle structured directory
     artist_dirs = get_subdirs_fast(path)
-    
-    # Estimate total work if not provided
-    if progress_callback and total_files is None:
-        total_files = 0
-        for artist_path in artist_dirs:
-            if has_music_files_fast(artist_path):
-                total_files += 1
-            total_files += len(get_subdirs_fast(artist_path))
     
     for artist_path in artist_dirs:
         artist_name = Path(artist_path).name
@@ -88,7 +85,7 @@ def scan_music_optimized(path, progress_callback=None, total_files=None, flatten
             else:
                 albums["Singles"] = direct_songs
             
-            processed += 1
+            processed += len(direct_songs) # Increment by number of songs
             if progress_callback:
                 progress_callback(processed, total_files or processed)
         
@@ -105,7 +102,7 @@ def scan_music_optimized(path, progress_callback=None, total_files=None, flatten
                 else:
                     albums[album_name] = songs
             
-            processed += 1
+            processed += len(songs) # Increment by number of songs
             if progress_callback:
                 progress_callback(processed, total_files or processed)
         
@@ -130,10 +127,10 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
     
     path = Path(path)
     
-    def update_progress():
+    def update_progress(count=1):
         nonlocal processed
         with processed_lock:
-            processed += 1
+            processed += count
             if progress_callback:
                 progress_callback(processed, total_files or processed)
     
@@ -148,14 +145,19 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
         except (OSError, IOError):
             pass
         
-        update_progress()
+        update_progress(len(songs)) # Update progress with actual song count
         return Path(album_path).name, sorted(songs)
     
     # Check if flat directory
     try:
         with os.scandir(path) as entries:
-            has_music = any(entry.is_file() and Path(entry.name).suffix.lower() in allowed_extensions 
-                          for entry in entries)
+            has_music = False
+            for entry in entries:
+                if entry.is_file():
+                    suffix = Path(entry.name).suffix.lower()
+                    if suffix in allowed_extensions:
+                        has_music = True
+                        break
     except (OSError, IOError):
         has_music = False
     
@@ -164,8 +166,11 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
         songs = []
         try:
             with os.scandir(path) as entries:
-                songs = [entry.path for entry in entries 
-                        if entry.is_file() and Path(entry.name).suffix.lower() in allowed_extensions]
+                for entry in entries:
+                    if entry.is_file():
+                        suffix = Path(entry.name).suffix.lower()
+                        if suffix in allowed_extensions:
+                            songs.append(entry.path)
         except (OSError, IOError):
             pass
         
@@ -177,7 +182,8 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
                 library[artist_name] = {"All Songs": sorted(songs)}
         
         if progress_callback:
-            progress_callback(1, 1)
+            # If it's a flat directory with songs, we've processed 1 unit of work
+            progress_callback(1, total_files if total_files is not None else 1)
         return library
     
     # Handle structured directory with parallel processing
@@ -197,8 +203,11 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
             direct_songs = []
             try:
                 with os.scandir(artist_path) as entries:
-                    direct_songs = [entry.path for entry in entries 
-                                  if entry.is_file() and Path(entry.name).suffix.lower() in allowed_extensions]
+                    for entry in entries:
+                        if entry.is_file():
+                            suffix = Path(entry.name).suffix.lower()
+                            if suffix in allowed_extensions:
+                                direct_songs.append(entry.path)
             except (OSError, IOError):
                 pass
             
@@ -207,7 +216,7 @@ def scan_music_parallel(path, progress_callback=None, total_files=None, flatten=
                     albums.extend(sorted(direct_songs))
                 else:
                     albums["Singles"] = sorted(direct_songs)
-                update_progress()
+                update_progress(len(direct_songs)) # Update progress with actual song count
             
             # Get album directories
             album_dirs = []
