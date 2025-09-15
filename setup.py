@@ -12,7 +12,7 @@ if sys.platform.startswith("win"):
 
 setup(
     name="tmus",
-    version="0.4.0",
+    version="0.5.1",
     packages=find_packages(),
     install_requires=requirements,
     entry_points={
